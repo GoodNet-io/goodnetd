@@ -30,7 +30,9 @@ void print_usage() {
         "  manifest gen <so>...          emit plugins.json manifest entries\n"
         "  identity gen --out <file>     generate a fresh node identity (mode 0600)\n"
         "  identity show <file>          print public surface of a saved identity\n"
-        "  run --config X --manifest Y --identity Z   load kernel + plugins, run until SIGTERM\n",
+        "  run --config X --manifest Y --identity Z   load kernel + plugins, run until SIGTERM\n"
+        "  doctor [--json]               walk runtime env + report fixable issues\n"
+        "  quickstart [--non-interactive]   first-time setup wizard\n",
         stderr);
 }
 
@@ -90,6 +92,12 @@ int main(int argc, char** argv) {
     }
     if (sub == "run") {
         return cmd_run(tail);
+    }
+    if (sub == "doctor") {
+        return cmd_doctor(tail);
+    }
+    if (sub == "quickstart") {
+        return cmd_quickstart(tail);
     }
 
     (void)std::fprintf(stderr, "goodnet: unknown subcommand '%.*s'\n",
