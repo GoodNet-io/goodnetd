@@ -22,24 +22,33 @@
 #include <chrono>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
 
+#include <nlohmann/json.hpp>
+
 #include <core/config/config.hpp>
+#include <core/identity/identity_plugin_signer.hpp>
 #include <core/identity/node_identity.hpp>
 #include <core/kernel/host_api_builder.hpp>
 #include <core/kernel/kernel.hpp>
 #include <core/kernel/plugin_context.hpp>
 #include <core/plugin/plugin_manager.hpp>
 #include <core/plugin/plugin_manifest.hpp>
+#include <core/registry/extension.hpp>
 #include <core/util/log.hpp>
 #include <core/util/log_config.hpp>
 
 #include <plugins/protocols/gnet/protocol.hpp>
+
+#include <sdk/extensions/identity.h>
 
 namespace gn::apps::goodnet {
 
@@ -93,13 +102,19 @@ struct RunArgs {
         }
     }
     if (out.config_path.empty() ||
-        out.manifest_path.empty() ||
-        out.identity_path.empty()) {
+        out.manifest_path.empty()) {
         (void)std::fputs(
-            "goodnet run: requires --config FILE --manifest FILE --identity FILE\n",
+            "goodnet run: requires --config FILE --manifest FILE "
+            "[--identity FILE]\n",
             stderr);
         return 2;
     }
+    /// `--identity` is required for the file-backed path and unused
+    /// for the provider-backed path. We can't tell which path applies
+    /// until after `load_identity_descriptor()` runs, so the
+    /// file-vs-provider gate moves to the caller. Empty `identity_path`
+    /// here means "operator omitted it"; the caller errors if the
+    /// active backend turns out to be file-based.
     return 0;
 }
 
@@ -111,25 +126,240 @@ struct RunArgs {
     return ss.str();
 }
 
+/// Phase-4 identity descriptor. Written by `goodnetd identity
+/// import-hsm`; consumed here. Empty `extension_id` means the file is
+/// missing or the backend is "file" — caller falls through to the
+/// existing file-backed install path.
+struct IdentityDescriptor {
+    std::string backend;       ///< "file" | "provider"
+    std::string extension_id;  ///< populated when backend == "provider"
+    std::string key_label;     ///< populated when backend == "provider"
+    /// Flat env-var map: each (k,v) is exported via `setenv(k,v,1)`
+    /// before kernel init. The PKCS#11 plugin reads its module path /
+    /// PIN through env vars; this keeps the kernel ABI plugin-agnostic.
+    std::vector<std::pair<std::string, std::string>> extra_env;
+};
+
+[[nodiscard]] std::filesystem::path identity_descriptor_path() {
+    /// Same XDG layout `doctor` / `quickstart` / `import-hsm` walk.
+    if (const char* x = std::getenv("XDG_DATA_HOME"); x && *x) {
+        return std::filesystem::path{x} / "goodnet" / "identity-config.json";
+    }
+    if (const char* h = std::getenv("HOME"); h && *h) {
+        return std::filesystem::path{h} / ".local" / "share" / "goodnet"
+               / "identity-config.json";
+    }
+    return {};
+}
+
+/// Read the descriptor if present. Absent file => returns a descriptor
+/// with empty `backend` (caller treats as file-backed). Parse failure
+/// is reported on stderr and surfaces as `nullopt` so the runner aborts
+/// rather than silently dropping back to file-backed identity.
+[[nodiscard]] std::optional<IdentityDescriptor> load_identity_descriptor() {
+    IdentityDescriptor d;
+    const auto path = identity_descriptor_path();
+    if (path.empty()) {
+        return d;  // no $HOME => no descriptor; legacy file path only
+    }
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        return d;  // not provisioned; legacy file path
+    }
+    std::ifstream f(path, std::ios::binary);
+    if (!f) {
+        (void)std::fprintf(stderr,
+            "goodnet run: identity descriptor %s — cannot open\n",
+            path.string().c_str());
+        return std::nullopt;
+    }
+    nlohmann::json doc;
+    try {
+        f >> doc;
+    } catch (const std::exception& ex) {
+        (void)std::fprintf(stderr,
+            "goodnet run: identity descriptor %s — JSON parse: %s\n",
+            path.string().c_str(), ex.what());
+        return std::nullopt;
+    }
+    if (!doc.is_object()) {
+        (void)std::fprintf(stderr,
+            "goodnet run: identity descriptor %s — top-level must be object\n",
+            path.string().c_str());
+        return std::nullopt;
+    }
+    if (doc.contains("backend") && doc["backend"].is_string()) {
+        d.backend = doc["backend"].get<std::string>();
+    }
+    if (d.backend == "provider") {
+        if (doc.contains("extension_id") && doc["extension_id"].is_string()) {
+            d.extension_id = doc["extension_id"].get<std::string>();
+        }
+        if (doc.contains("key_label") && doc["key_label"].is_string()) {
+            d.key_label = doc["key_label"].get<std::string>();
+        }
+        if (d.extension_id.empty() || d.key_label.empty()) {
+            (void)std::fprintf(stderr,
+                "goodnet run: identity descriptor %s — provider backend "
+                "needs non-empty extension_id and key_label\n",
+                path.string().c_str());
+            return std::nullopt;
+        }
+        if (doc.contains("extra") && doc["extra"].is_object()) {
+            /// Mapping convention: each `extra.<key>` whose value is a
+            /// string becomes a setenv(<KEY_UPPER>, <value>). The keys
+            /// in the descriptor are documented (`pin_env`,
+            /// `module_path`), but we don't whitelist — a plugin may
+            /// grow more keys without a goodnetd rebuild.
+            for (const auto& [k, v] : doc["extra"].items()) {
+                if (!v.is_string()) continue;
+                /// `pin_env` is special: its value is the NAME of the
+                /// env var the operator wants the plugin to read.
+                /// goodnetd does NOT inject the PIN itself (that would
+                /// require the daemon to know the secret); the
+                /// operator's systemd unit `LoadCredential=` or a
+                /// shell wrapper exports the actual PIN under whatever
+                /// env name `pin_env` declares. We carry the NAME
+                /// through to the plugin under
+                /// `GOODNET_PKCS11_PIN_ENV` so the plugin knows which
+                /// env var to read.
+                std::string env_key;
+                env_key.reserve(k.size() + 8);
+                env_key.append("GOODNET_");
+                for (const char c : k) {
+                    env_key.push_back(
+                        (c >= 'a' && c <= 'z') ? char(c - 'a' + 'A') : c);
+                }
+                d.extra_env.emplace_back(std::move(env_key),
+                                          v.get<std::string>());
+            }
+        }
+    }
+    return d;
+}
+
+/// Provider install path — replicates the work
+/// `gn_core_install_identity_from_provider` does on the C ABI but
+/// against the C++ `Kernel` the runner constructs directly. The C ABI
+/// version takes a `gn_core_t*` which wraps `gn::core::Kernel`; we
+/// reach the same primitives (extension registry + `NodeIdentity::
+/// from_signer`) on the kernel we already own. Returns 0 on success;
+/// non-zero exit code on failure with diagnostics on stderr.
+[[nodiscard]] int install_provider_identity(
+    gn::core::Kernel&        kernel,
+    const std::string&       extension_id,
+    const std::string&       key_label) {
+
+    const void* vtable_raw = nullptr;
+    const auto query_rc = kernel.extensions().query_extension_checked(
+        extension_id, GN_EXT_IDENTITY_SIGNER_VERSION, &vtable_raw);
+    if (query_rc != GN_OK || vtable_raw == nullptr) {
+        (void)std::fprintf(stderr,
+            "goodnet run: identity provider extension '%s' not found "
+            "(kernel rc=%d). Verify the manifest lists the signer plugin "
+            "and the plugin registers '%s' under the identity-signer "
+            "version.\n",
+            extension_id.c_str(), int(query_rc), extension_id.c_str());
+        return 1;
+    }
+    const auto* vtable =
+        static_cast<const gn_identity_signer_vtable_t*>(vtable_raw);
+    /// Minimum api_size: producer must extend at least through the
+    /// `sign` slot. Mirrors the gate `gn_core_install_identity_from_
+    /// provider` applies on the C ABI.
+    constexpr std::size_t required_api_size =
+        offsetof(gn_identity_signer_vtable_t, sign) +
+        sizeof(static_cast<gn_identity_signer_vtable_t*>(nullptr)->sign);
+    if (vtable->api_size < required_api_size) {
+        (void)std::fprintf(stderr,
+            "goodnet run: identity provider '%s' vtable too small "
+            "(api_size=%zu, required>=%zu)\n",
+            extension_id.c_str(),
+            static_cast<std::size_t>(vtable->api_size),
+            required_api_size);
+        return 1;
+    }
+    void* const ctx =
+        const_cast<void*>(static_cast<const void*>(vtable));
+    auto signer = std::make_unique<gn::core::identity::IdentityPluginSigner>(
+        vtable, ctx, key_label);
+    auto identity = gn::core::identity::NodeIdentity::from_signer(
+        std::move(signer), /*expiry*/ 0);
+    if (!identity) {
+        (void)std::fprintf(stderr,
+            "goodnet run: identity provider '%s' attestation install "
+            "failed — %s\n",
+            extension_id.c_str(),
+            identity.error().what.empty()
+                ? "unknown"
+                : identity.error().what.c_str());
+        return 1;
+    }
+    kernel.identities().add(identity->device().public_key());
+    kernel.set_node_identity(std::move(*identity));
+    return 0;
+}
+
 }  // namespace
 
 int cmd_run(std::span<const std::string_view> args) {
     RunArgs ra;
     if (const int rc = parse_args(args, ra); rc != 0) return rc;
 
-    /// Identity first — the kernel's security pipeline needs it
-    /// before any conn allocates a session, and a missing identity
-    /// is a deploy-config error, not a runtime fault.
-    auto identity = gn::core::identity::NodeIdentity::load_from_file(
-        ra.identity_path);
-    if (!identity) {
-        (void)std::fprintf(stderr,
-            "goodnet run: identity %s — %s\n",
-            ra.identity_path.c_str(),
-            identity.error().what.empty()
-                ? "load failed"
-                : identity.error().what.c_str());
-        return 1;
+    /// Phase-4 identity descriptor. When `identity-config.json` lives
+    /// at the XDG path and declares `backend = "provider"`, the
+    /// runner defers identity install until AFTER plugins load so the
+    /// signer extension is queryable. The file-backed default
+    /// (descriptor absent / `backend = "file"`) preserves today's
+    /// pre-plugin install order.
+    auto descriptor = load_identity_descriptor();
+    if (!descriptor) {
+        return 1;  // diagnostics already printed
+    }
+    const bool provider_backend = (descriptor->backend == "provider");
+
+    /// Export `extra.*` env vars BEFORE any plugin loads — the
+    /// PKCS#11 plugin reads its module path / PIN from env on
+    /// `gn_plugin_init`. We do this even when the operator passed
+    /// `--identity` (the file-backed path also tolerates harmless
+    /// extra env). The descriptor's `pin_env` value is the NAME of
+    /// the env var that carries the actual PIN; goodnetd never
+    /// touches the PIN itself.
+    if (provider_backend) {
+        for (const auto& [k, v] : descriptor->extra_env) {
+            /// `setenv(name, value, /*overwrite=*/1)`. The descriptor
+            /// is the source of truth at boot — a stale value from a
+            /// previous run shouldn't shadow what the operator
+            /// re-imported today.
+            (void)::setenv(k.c_str(), v.c_str(), 1);
+        }
+    }
+
+    /// File-backed identity: load now so a missing or malformed file
+    /// fails fast before we touch the kernel. Provider-backed: skip
+    /// the load — identity install happens after plugins register
+    /// the signer extension.
+    std::optional<gn::core::identity::NodeIdentity> identity;
+    if (!provider_backend) {
+        if (ra.identity_path.empty()) {
+            (void)std::fputs(
+                "goodnet run: file-backed identity requires --identity FILE "
+                "(or run `goodnetd identity import-hsm` for provider-backed)\n",
+                stderr);
+            return 2;
+        }
+        auto loaded = gn::core::identity::NodeIdentity::load_from_file(
+            ra.identity_path);
+        if (!loaded) {
+            (void)std::fprintf(stderr,
+                "goodnet run: identity %s — %s\n",
+                ra.identity_path.c_str(),
+                loaded.error().what.empty()
+                    ? "load failed"
+                    : loaded.error().what.c_str());
+            return 1;
+        }
+        identity.emplace(std::move(*loaded));
     }
 
     /// Config: parse + validate. Same path as
@@ -204,8 +434,15 @@ int cmd_run(std::span<const std::string_view> args) {
         (void)kernel.protocol_layers().register_layer(
             std::make_shared<GnetProtocol>(), &proto_id);
     }
-    kernel.identities().add(identity->device().public_key());
-    kernel.set_node_identity(std::move(*identity));
+    /// File-backed: install identity now (the security pipeline reads
+    /// it on every `notify_connect`, so before-plugins is the right
+    /// spot). Provider-backed: skip — plugins must load first so the
+    /// signer extension is queryable, and we install after the
+    /// `PluginManager::load` block below.
+    if (!provider_backend) {
+        kernel.identities().add(identity->device().public_key());
+        kernel.set_node_identity(std::move(*identity));
+    }
 
     /// Host context for the runner itself — no plugin anchor (the
     /// runner is not a loaded plugin), `kind = LINK` so the runner
@@ -259,6 +496,21 @@ int cmd_run(std::span<const std::string_view> args) {
     }
     const std::size_t loaded_plugin_count = plugin_paths.size();
 #endif
+
+    /// Provider-backed identity install runs HERE — after plugins
+    /// register their extensions, before the kernel takes on session
+    /// traffic. A descriptor that points at an extension no plugin
+    /// registered surfaces as `GN_ERR_NOT_FOUND` from the inline
+    /// helper, which is the precise diagnostic the operator wants
+    /// (the manifest is missing the signer plugin).
+    if (provider_backend) {
+        if (const int rc = install_provider_identity(
+                kernel, descriptor->extension_id, descriptor->key_label);
+            rc != 0) {
+            plugins.shutdown();
+            return rc;
+        }
+    }
 
     /// Signal handlers go in AFTER plugins load — until then a
     /// SIGTERM should kill the process immediately rather than walk

@@ -76,8 +76,83 @@ namespace {
     return line;
 }
 
+/// Interactive HSM branch of the identity step. Reached when the
+/// operator answers "2" to the backend question. Returns 0 on
+/// success; otherwise propagates the import-hsm exit code so a
+/// failed PKCS#11 setup aborts quickstart instead of falling
+/// through to a half-configured state.
+[[nodiscard]] int step_identity_hsm(bool interactive) {
+    /// Sensible defaults for the prompts — SoftHSM2 is the common
+    /// dev / CI module so we prefill its path; the YubiKey 5
+    /// `libykcs11.so` path is the runner-up convention. The
+    /// non-interactive path can't run HSM (the descriptor needs at
+    /// least a `--key-label` the operator picks for their token);
+    /// quickstart's `--non-interactive` mode stays on the file-backed
+    /// default which is the documented behaviour.
+    if (!interactive) {
+        (void)std::fputs(
+            "[1/3] identity: HSM backend not supported in --non-interactive "
+            "mode (no PIN env / module path defaults). Run `goodnetd "
+            "identity import-hsm` after quickstart finishes.\n",
+            stderr);
+        return 1;
+    }
+    const std::string module_path = prompt(
+        "PKCS#11 module path",
+        "/usr/lib/softhsm/libsofthsm2.so");
+    const std::string key_label = prompt(
+        "PKCS#11 key label (CKA_LABEL on the token)",
+        "goodnet");
+    const std::string pin_env = prompt(
+        "Env var name carrying the PIN at run time",
+        "GOODNET_PKCS11_PIN");
+
+    /// Delegate to `cmd_identity_import_hsm` — same JSON-write code
+    /// path the operator would hit by typing the command manually,
+    /// so the descriptor's on-disk shape stays consistent regardless
+    /// of how it was produced.
+    const std::array<std::string_view, 8> argv = {
+        std::string_view{"--extension-id"},
+        std::string_view{"gn.identity.pkcs11"},
+        std::string_view{"--key-label"},
+        std::string_view{key_label},
+        std::string_view{"--module"},
+        std::string_view{module_path},
+        std::string_view{"--pin-env"},
+        std::string_view{pin_env},
+    };
+    const int rc = cmd_identity_import_hsm(
+        std::span<const std::string_view>{argv.data(), argv.size()});
+    if (rc != 0) {
+        (void)std::fprintf(stderr,
+            "[1/3] identity: cmd_identity_import_hsm returned %d\n", rc);
+        return rc;
+    }
+    (void)std::fputs(
+        "[1/3] identity: wrote identity-config.json (backend=provider)\n",
+        stdout);
+    return 0;
+}
+
 [[nodiscard]] int step_identity(const std::filesystem::path& data_dir,
                                  bool interactive) {
+    /// Phase-4: offer the HSM branch up front. The default stays
+    /// file-backed (option 1) — most operators run on a laptop / VM
+    /// without an HSM and the wizard should never force a token
+    /// purchase. `--non-interactive` always picks option 1 to keep
+    /// the existing scripted-image build behaviour stable.
+    if (interactive) {
+        (void)std::fputs(
+            "Identity backend:\n"
+            "  1) File (default — ~/.local/share/goodnet/identity/default.bin)\n"
+            "  2) PKCS#11 HSM (YubiKey / SoftHSM / enterprise HSM)\n",
+            stdout);
+        const std::string choice = prompt("Choose", "1");
+        if (choice == "2") {
+            return step_identity_hsm(interactive);
+        }
+    }
+
     const auto default_path = data_dir / "identity" / "default.bin";
     std::string out_path;
     if (interactive) {

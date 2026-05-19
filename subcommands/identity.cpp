@@ -148,7 +148,7 @@ int do_show(std::span<const std::string_view> args) {
 int cmd_identity(std::span<const std::string_view> args) {
     if (args.empty()) {
         (void)std::fputs(
-            "goodnet identity: action must be 'gen' or 'show'\n",
+            "goodnet identity: action must be 'gen' | 'show' | 'import-hsm'\n",
             stderr);
         return 2;
     }
@@ -159,8 +159,16 @@ int cmd_identity(std::span<const std::string_view> args) {
     if (action == "show") {
         return do_show(args.subspan(1));
     }
+    /// `import-hsm` writes a separate `identity-config.json` descriptor
+    /// (backend=provider) — the file-based `gen`/`show` path stays
+    /// untouched. Both coexist; the descriptor's `backend` field is
+    /// what `cmd_run` reads to decide which install path to take.
+    if (action == "import-hsm") {
+        return cmd_identity_import_hsm(args.subspan(1));
+    }
     (void)std::fprintf(stderr,
-        "goodnet identity: unknown action '%.*s' (use 'gen' or 'show')\n",
+        "goodnet identity: unknown action '%.*s' (use 'gen', 'show', "
+        "or 'import-hsm')\n",
         static_cast<int>(action.size()), action.data());
     return 2;
 }

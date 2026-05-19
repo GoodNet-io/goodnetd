@@ -180,12 +180,143 @@ void test_broken_returns_nonzero() {
     fs::remove_all(root);
 }
 
+/// Provider-backend doctor test seam state.
+/// Captures the (extension_id, key_label) the doctor's
+/// `check_identity_provider` queries, and a programmable return code
+/// the next stub call surfaces. Tests set `g_stub_rc` before driving
+/// the doctor and inspect `g_stub_called_*` after.
+int g_stub_rc           = 0;
+int g_stub_call_count   = 0;
+std::string g_stub_called_extension;
+std::string g_stub_called_label;
+
+int provider_query_stub(const std::string& extension_id,
+                         const std::string& key_label) {
+    ++g_stub_call_count;
+    g_stub_called_extension = extension_id;
+    g_stub_called_label     = key_label;
+    return g_stub_rc;
+}
+
+void seed_provider_descriptor(const fs::path& data_root,
+                               bool             with_pin_env) {
+    /// Build a `identity-config.json` next to the file-backed fixture
+    /// `seed_clean_fixture` laid down. Doctor reports BOTH paths —
+    /// the file-backed `[ok]` line and the provider-backend overlay
+    /// — when both exist.
+    const auto gd = data_root / "goodnet";
+    nlohmann::json doc = {
+        {"backend",      "provider"},
+        {"extension_id", "gn.identity.pkcs11"},
+        {"key_label",    "goodnet"},
+    };
+    if (with_pin_env) {
+        doc["extra"] = {
+            {"pin_env",     "GOODNETD_TEST_PKCS11_PIN"},
+            {"module_path", "/usr/lib/softhsm/libsofthsm2.so"},
+        };
+    } else {
+        doc["extra"] = {
+            {"module_path", "/usr/lib/softhsm/libsofthsm2.so"},
+        };
+    }
+    std::ofstream f(gd / "identity-config.json", std::ios::binary);
+    f << doc.dump(2);
+}
+
+void test_provider_backend_shown_as_ok() {
+    const auto root = make_tmp_root();
+    setenv_or_die("XDG_DATA_HOME", root.string());
+    setenv_or_die("HOME", root.string());
+    setenv_or_die("XDG_RUNTIME_DIR", root.string());
+    /// PIN env present + non-empty: the PIN-env sub-check should land
+    /// at `[ok]` rather than `[warn]`.
+    setenv_or_die("GOODNETD_TEST_PKCS11_PIN", "1234");
+    seed_clean_fixture(root);
+    seed_provider_descriptor(root, /*with_pin_env=*/true);
+
+    g_stub_rc = 0;
+    g_stub_call_count = 0;
+    g_stub_called_extension.clear();
+    g_stub_called_label.clear();
+    set_doctor_provider_query_hook_for_test(&provider_query_stub);
+
+    const int rc = run_doctor();
+    set_doctor_provider_query_hook_for_test(nullptr);
+
+    /// `[ok]` reachability + PIN env set + file-backed identity also
+    /// present => no `[error]` findings => exit 0.
+    assert(rc == 0 && "provider backend with reachable extension must exit 0");
+    assert(g_stub_call_count == 1 && "doctor must query the stub exactly once");
+    assert(g_stub_called_extension == "gn.identity.pkcs11");
+    assert(g_stub_called_label == "goodnet");
+    (void)std::fprintf(stderr,
+        "[ok] test_provider_backend_shown_as_ok (root=%s)\n",
+        root.string().c_str());
+    fs::remove_all(root);
+}
+
+void test_provider_backend_missing_pin_env_warns() {
+    const auto root = make_tmp_root();
+    setenv_or_die("XDG_DATA_HOME", root.string());
+    setenv_or_die("HOME", root.string());
+    setenv_or_die("XDG_RUNTIME_DIR", root.string());
+    /// Force the PIN env to be empty — the missing-env warn path is
+    /// exactly what we want to exercise.
+    ::unsetenv("GOODNETD_TEST_PKCS11_PIN");
+    seed_clean_fixture(root);
+    seed_provider_descriptor(root, /*with_pin_env=*/true);
+
+    g_stub_rc = 0;  // extension reachable
+    g_stub_call_count = 0;
+    set_doctor_provider_query_hook_for_test(&provider_query_stub);
+
+    const int rc = run_doctor();
+    set_doctor_provider_query_hook_for_test(nullptr);
+
+    /// PIN env missing is `[warn]` (not `[error]`); doctor exits 0
+    /// because no `[error]` findings landed.
+    assert(rc == 0 && "missing PIN env must warn, not error");
+    assert(g_stub_call_count == 1);
+    (void)std::fprintf(stderr,
+        "[ok] test_provider_backend_missing_pin_env_warns (root=%s)\n",
+        root.string().c_str());
+    fs::remove_all(root);
+}
+
+void test_provider_backend_unreachable_errors() {
+    const auto root = make_tmp_root();
+    setenv_or_die("XDG_DATA_HOME", root.string());
+    setenv_or_die("HOME", root.string());
+    setenv_or_die("XDG_RUNTIME_DIR", root.string());
+    setenv_or_die("GOODNETD_TEST_PKCS11_PIN", "1234");
+    seed_clean_fixture(root);
+    seed_provider_descriptor(root, /*with_pin_env=*/true);
+
+    g_stub_rc = -1;  // extension NOT reachable
+    g_stub_call_count = 0;
+    set_doctor_provider_query_hook_for_test(&provider_query_stub);
+
+    const int rc = run_doctor();
+    set_doctor_provider_query_hook_for_test(nullptr);
+
+    /// Unreachable extension => `[error]` => doctor exits 1.
+    assert(rc == 1 && "unreachable provider extension must surface as error");
+    (void)std::fprintf(stderr,
+        "[ok] test_provider_backend_unreachable_errors (root=%s)\n",
+        root.string().c_str());
+    fs::remove_all(root);
+}
+
 }  // namespace
 
 int main() {
     redirect_stdout_to_null();
     test_clean_returns_zero();
     test_broken_returns_nonzero();
+    test_provider_backend_shown_as_ok();
+    test_provider_backend_missing_pin_env_warns();
+    test_provider_backend_unreachable_errors();
     (void)std::fprintf(stderr, "test_doctor: all checks passed\n");
     return 0;
 }

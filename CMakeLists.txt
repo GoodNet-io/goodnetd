@@ -44,6 +44,7 @@ add_executable(goodnetd
     subcommands/plugin_hash.cpp
     subcommands/manifest_gen.cpp
     subcommands/identity.cpp
+    subcommands/identity_import_hsm.cpp
     subcommands/run.cpp
     subcommands/doctor.cpp
     subcommands/quickstart.cpp
@@ -133,4 +134,23 @@ if(GOODNETD_BUILD_TESTS)
     target_compile_features(test_quickstart PRIVATE cxx_std_23)
     target_include_directories(test_quickstart PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME goodnetd.quickstart COMMAND test_quickstart)
+
+    # `import-hsm` is a JSON-write only subcommand — no kernel link,
+    # no libsodium, just nlohmann_json. The test binary mirrors that
+    # surface: the import-hsm TU plus the test driver, with linker
+    # stubs in the test for every other subcommand declared in
+    # subcommands.hpp.
+    add_executable(test_identity_import_hsm
+        tests/test_identity_import_hsm.cpp
+        subcommands/identity_import_hsm.cpp
+    )
+    target_link_libraries(test_identity_import_hsm
+        PRIVATE
+            nlohmann_json::nlohmann_json
+    )
+    target_compile_features(test_identity_import_hsm PRIVATE cxx_std_23)
+    target_include_directories(test_identity_import_hsm
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME goodnetd.identity_import_hsm
+             COMMAND test_identity_import_hsm)
 endif()

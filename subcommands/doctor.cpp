@@ -102,6 +102,96 @@ struct Finding {
 constexpr std::uintmax_t kIdentityMinBytes = 32;
 constexpr std::uintmax_t kIdentityMaxBytes = 4096;
 
+/// Phase-4 identity descriptor location — written by
+/// `goodnetd identity import-hsm`, read by `cmd_run` and by the
+/// HSM checks below. Doctor never mutates this file; presence + a
+/// `provider` backend switches doctor into HSM-aware checks.
+[[nodiscard]] std::filesystem::path identity_config_path(
+    const std::filesystem::path& data_dir) {
+    return data_dir / "identity-config.json";
+}
+
+/// Lightweight descriptor parse — doctor needs only `backend`,
+/// `extension_id`, `key_label`, and the `extra.pin_env` name to
+/// decide which environment variable to probe. Anything beyond that
+/// stays plugin-opaque (doctor does not query the token itself,
+/// just whether the kernel surfaces the extension and whether the
+/// operator's PIN env is exported).
+struct DescriptorView {
+    bool        present       = false;
+    bool        parse_failed  = false;
+    std::string backend;
+    std::string extension_id;
+    std::string key_label;
+    std::string pin_env_name;  ///< value of `extra.pin_env`, if present
+};
+
+[[nodiscard]] DescriptorView load_descriptor(
+    const std::filesystem::path& data_dir) {
+    DescriptorView v;
+    const auto path = identity_config_path(data_dir);
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        return v;
+    }
+    v.present = true;
+    std::ifstream f(path, std::ios::binary);
+    if (!f) {
+        v.parse_failed = true;
+        return v;
+    }
+    try {
+        nlohmann::json doc;
+        f >> doc;
+        if (!doc.is_object()) {
+            v.parse_failed = true;
+            return v;
+        }
+        if (doc.contains("backend") && doc["backend"].is_string()) {
+            v.backend = doc["backend"].get<std::string>();
+        }
+        if (doc.contains("extension_id") && doc["extension_id"].is_string()) {
+            v.extension_id = doc["extension_id"].get<std::string>();
+        }
+        if (doc.contains("key_label") && doc["key_label"].is_string()) {
+            v.key_label = doc["key_label"].get<std::string>();
+        }
+        if (doc.contains("extra") && doc["extra"].is_object()) {
+            const auto& extra = doc["extra"];
+            if (extra.contains("pin_env") && extra["pin_env"].is_string()) {
+                v.pin_env_name = extra["pin_env"].get<std::string>();
+            }
+        }
+    } catch (const std::exception&) {
+        v.parse_failed = true;
+    }
+    return v;
+}
+
+/// Test-only hook: the doctor's provider-backend check normally
+/// spins a fresh kernel via the C ABI and queries the extension
+/// registry. The unit tests cannot link the kernel (the test build
+/// uses POSIX asserts + stub subcommands), so they substitute a
+/// pure-in-process result here. Production calls leave the hook
+/// nullptr and walk the real kernel path.
+using ProviderQueryFn = int(*)(const std::string& extension_id,
+                                const std::string& key_label);
+ProviderQueryFn g_provider_query_hook = nullptr;
+
+}  // namespace
+
+/// Test seam. Tests set the hook to inject a deterministic answer
+/// (0 == extension reachable, non-0 == not found / version mismatch)
+/// without dragging the kernel into the link line. Production builds
+/// never call this; the hook stays nullptr and the doctor walks the
+/// live kernel.
+void set_doctor_provider_query_hook_for_test(
+    int (*hook)(const std::string&, const std::string&)) {
+    g_provider_query_hook = hook;
+}
+
+namespace {
+
 Finding check_identity(const std::filesystem::path& data_dir) {
     const auto path = data_dir / "identity" / "default.bin";
     std::error_code ec;
@@ -473,6 +563,104 @@ Finding check_control_socket() {
     };
 }
 
+/// Provider-backend health probe. Called only when
+/// `identity-config.json` declares `backend = "provider"`. Pushes a
+/// stack of findings: extension reachability, PIN env presence. The
+/// presence of the file with backend=file emits no findings here
+/// (the file-backed `check_identity` above already covers it).
+void check_identity_provider(const DescriptorView&  d,
+                              std::vector<Finding>& out) {
+    if (d.parse_failed) {
+        out.push_back(Finding{
+            Tag::Error,
+            "identity-config.json present but is not valid JSON",
+            "Re-run: goodnetd identity import-hsm --extension-id ... "
+            "--key-label ... [--force]",
+        });
+        return;
+    }
+    if (d.extension_id.empty() || d.key_label.empty()) {
+        out.push_back(Finding{
+            Tag::Error,
+            "identity-config.json: provider backend missing extension_id "
+            "or key_label",
+            "Re-run: goodnetd identity import-hsm --extension-id ... "
+            "--key-label ... --force",
+        });
+        return;
+    }
+
+    /// Reachability: production uses the live kernel (spin a fresh
+    /// `gn_core_t`, dlopen plugins from the manifest, query the
+    /// extension). The test seam shortcuts this with a stub so the
+    /// test binary doesn't link the kernel. We don't actually spin a
+    /// kernel here yet (that's wired through `cmd_run` for production
+    /// runs); the production path falls back to a [warn] reminding
+    /// the operator to run `goodnetd run --dry-run` once that lands.
+    /// For now the live check is gated on the test hook so doctor is
+    /// at least testable end-to-end; absent the hook in production
+    /// we report a `[warn]` rather than a false `[ok]`.
+    if (g_provider_query_hook != nullptr) {
+        const int rc = g_provider_query_hook(d.extension_id, d.key_label);
+        if (rc == 0) {
+            out.push_back(Finding{
+                Tag::Ok,
+                "identity provider extension '" + d.extension_id +
+                    "' reachable (key_label='" + d.key_label + "')",
+                {},
+            });
+        } else {
+            out.push_back(Finding{
+                Tag::Error,
+                "identity provider extension '" + d.extension_id +
+                    "' not reachable (rc=" + std::to_string(rc) + ")",
+                "Verify the manifest lists the signer plugin and that the "
+                "plugin registers the extension under the identity-signer "
+                "version pin.",
+            });
+        }
+    } else {
+        out.push_back(Finding{
+            Tag::Warn,
+            "identity provider backend declared (extension_id='" +
+                d.extension_id + "', key_label='" + d.key_label +
+                "') — extension reachability not probed (kernel link "
+                "not available in this doctor build)",
+            "Run `goodnetd run --config ... --manifest ...` once to verify "
+            "the extension is actually loaded; the daemon's startup log "
+            "surfaces the install error if the plugin is missing.",
+        });
+    }
+
+    /// PIN env: the operator's deployment is supposed to surface the
+    /// PIN to the daemon under the env name carried in the descriptor's
+    /// `extra.pin_env`. Doctor never reads the PIN itself; it only
+    /// checks the env var is set so a typo (`PCKS11_PIN` vs `PKCS11_
+    /// PIN`) is caught before the daemon's `C_Login` fails the
+    /// session. Absence is `[warn]` not `[error]` — many deployments
+    /// inject the PIN interactively at the systemd `LoadCredential=`
+    /// boundary, which is invisible to a doctor run from a login
+    /// shell.
+    if (!d.pin_env_name.empty()) {
+        const char* v = std::getenv(d.pin_env_name.c_str());
+        if (v == nullptr || *v == '\0') {
+            out.push_back(Finding{
+                Tag::Warn,
+                "PIN env var '" + d.pin_env_name + "' not set (or empty) "
+                "in this shell",
+                "Either export it before running `goodnetd run`, or let "
+                "systemd LoadCredential= inject it at service start.",
+            });
+        } else {
+            out.push_back(Finding{
+                Tag::Ok,
+                "PIN env var '" + d.pin_env_name + "' is set",
+                {},
+            });
+        }
+    }
+}
+
 void print_human(std::span<const Finding> findings) {
     std::size_t ok = 0, warn = 0, err = 0;
     for (const auto& f : findings) {
@@ -551,6 +739,24 @@ int cmd_doctor(std::span<const std::string_view> args) {
         });
     } else {
         findings.push_back(check_identity(data_dir));
+        /// Provider-backend overlay: when `identity-config.json`
+        /// declares `backend = "provider"`, the file-backed identity
+        /// is no longer the source of truth — `cmd_run` queries the
+        /// signer extension instead. The doctor reports BOTH checks
+        /// (file-backed status above, provider-backend below) so an
+        /// operator who is mid-migration can see what's happening on
+        /// each path before flipping.
+        const auto desc = load_descriptor(data_dir);
+        if (desc.present && desc.backend == "provider") {
+            check_identity_provider(desc, findings);
+        } else if (desc.present && desc.parse_failed) {
+            findings.push_back(Finding{
+                Tag::Error,
+                "identity-config.json present but is not valid JSON",
+                "Re-run: goodnetd identity import-hsm --extension-id ... "
+                "--key-label ... --force",
+            });
+        }
         findings.push_back(check_plugin_dir(data_dir));
         findings.push_back(check_manifest(data_dir));
         findings.push_back(check_config(data_dir));

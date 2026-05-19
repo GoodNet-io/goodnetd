@@ -66,6 +66,21 @@ int cmd_plugin_hash(std::span<const std::string_view>)     { return 0; }
 int cmd_manifest_gen(std::span<const std::string_view>)    { return 0; }
 int cmd_run(std::span<const std::string_view>)             { return 0; }
 
+/// `cmd_identity_import_hsm` is reachable from quickstart's HSM
+/// branch (option 2 in the interactive prompt). The non-interactive
+/// test path never hits it; stub the symbol so the link closes.
+int cmd_identity_import_hsm(std::span<const std::string_view>) {
+    (void)std::fputs(
+        "test_quickstart: stub cmd_identity_import_hsm hit unexpectedly\n",
+        stderr);
+    return 1;
+}
+
+/// Doctor's test seam — referenced from `subcommands.hpp` but never
+/// reached from the quickstart test. No-op satisfies the linker.
+void set_doctor_provider_query_hook_for_test(
+    int (*)(const std::string&, const std::string&)) {}
+
 }  // namespace gn::apps::goodnet
 
 using namespace gn::apps::goodnet;
