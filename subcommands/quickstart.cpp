@@ -353,7 +353,8 @@ void step_plugins(std::vector<std::string>& out_paths) {
         {"manifest_path",
          (data_dir / "manifests" / "baseline.json").string()},
         {"listeners", nlohmann::json::array({
-            { {"uri", "tcp://0.0.0.0:9100"} },
+            { {"uri", "ws://0.0.0.0:9100"} },
+            { {"uri", "tcp://0.0.0.0:9101"} },
         })},
     };
     std::ofstream f(cfg_path, std::ios::binary | std::ios::trunc);

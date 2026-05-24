@@ -6,40 +6,96 @@ the Linux convention (`systemd`, `dockerd`, `sshd`): `goodnetd run`
 is the long-running process; the other subcommands are
 one-shot operator utilities.
 
+## Quickstart
+
+```sh
+# 1. Install daemon + all plugins
+nix profile add github:GoodNet-io/goodnetd#full
+
+# 2. First-time wizard: generates identity, detects plugins,
+#    writes manifest + config (ws://0.0.0.0:9100 by default)
+goodnetd quickstart
+
+# 3. Run
+goodnetd run \
+  --config   ~/.local/share/goodnet/config.json \
+  --manifest ~/.local/share/goodnet/manifests/baseline.json \
+  --identity ~/.local/share/goodnet/identity/default.bin
+
+# 4. Verify
+goodnetd doctor
+```
+
+Re-running `quickstart` after installing plugins is idempotent —
+it skips steps already done and generates the manifest from whatever
+`.so` files it finds under `~/.nix-profile/lib/goodnet/plugins/`.
+
 ## Subcommands
 
-- `goodnetd run` — long-running daemon process (load config + manifest
-  → start kernel → load plugins → serve until SIGTERM).
-- `goodnetd version` — prints kernel + plugin versions.
-- `goodnetd config validate` — checks a config file against the kernel's
-  config schema.
-- `goodnetd plugin hash <path>` — SHA-256 of a plugin's `.so` for
-  pinning in manifests.
-- `goodnetd manifest gen` — emits a manifest skeleton for a plugin
-  directory.
-- `goodnetd identity gen [--expiry N]` — generates a fresh node
-  identity.
-- `goodnetd identity show` — prints the loaded node identity.
-- `goodnetd identity import-hsm` — Phase 4 of the identity refactor:
-  binds a token-resident Ed25519 keypair (PKCS#11 label) to the local
-  node identity without ever materialising the private half on disk.
-- `goodnetd doctor` — pre-flight checks for a node install: identity
-  file presence + readability, manifest digests vs. on-disk plugin
-  hashes, identity-provider extension reachability, config schema
-  validation. Designed to surface every common operator-side
-  mis-configuration before `goodnetd run` is invoked.
-- `goodnetd quickstart` — one-shot bootstrap for a fresh machine:
-  generates `identity.bin`, emits a `plugins.json` manifest against
-  the bundled `.so` set, writes a starter `node.json`, and points the
-  operator at `goodnetd run` with the correct arguments. Supports the
-  same `--hsm` option as `identity import-hsm` to skip generating a
-  software identity when the operator is provisioning against a token.
+- `goodnetd run --config X --manifest Y [--identity Z]` — long-running
+  daemon: loads config + manifest, starts kernel, loads plugins, serves
+  until SIGTERM. `--identity` is required for file-backed identity;
+  omit it when using an HSM/provider backend (see `identity import-hsm`).
+- `goodnetd version` — prints goodnetd and kernel version strings.
+- `goodnetd config validate <file>` — checks a config file for structural
+  validity.
+- `goodnetd plugin hash <so>` — SHA-256 of a plugin `.so` for pinning
+  in manifests.
+- `goodnetd manifest gen <so>...` — computes SHA-256 for each listed
+  `.so` and emits a `plugins.json` manifest to stdout. Redirect into a
+  file: `goodnetd manifest gen ~/.nix-profile/lib/goodnet/plugins/*.so > baseline.json`
+- `goodnetd identity gen --out <file> [--expiry N]` — generates a fresh
+  node identity and writes it to `<file>` (mode 0600). `--out` is
+  required.
+- `goodnetd identity show <file>` — prints the public surface (address,
+  user_pk, device_pk) of a saved identity file.
+- `goodnetd identity import-hsm` — binds a token-resident Ed25519
+  keypair (PKCS#11) to the local node identity without materialising
+  the private key on disk. Flags:
+  - `--extension-id <id>` (required) — plugin extension ID for the signer
+  - `--key-label <label>` (required) — PKCS#11 `CKA_LABEL` on the token
+  - `--module <path>` — path to the PKCS#11 module `.so`
+  - `--pin-env <VAR>` — name of the env var that carries the token PIN at runtime
+  - `--config <file>` — write descriptor to a custom path
+  - `--force` — overwrite an existing descriptor
+- `goodnetd doctor [--json]` — pre-flight checks: identity, provider
+  extension reachability, plugin manifest digests, config schema, loader,
+  control socket. `--json` emits a machine-readable array for CI.
+- `goodnetd quickstart [--non-interactive]` — first-time setup wizard:
+  generates identity, detects installed plugins, writes manifest and
+  `config.json`. Pass `--non-interactive` for scripted image builds.
+  In interactive mode, offers an HSM backend option (PKCS#11).
+
+## Config
+
+`config.json` is a JSON object. Quickstart writes it to
+`~/.local/share/goodnet/config.json`. Minimal example:
+
+```json
+{
+  "listeners": [
+    { "uri": "ws://0.0.0.0:9100" },
+    { "uri": "tcp://0.0.0.0:9101" }
+  ]
+}
+```
 
 ## Build
 
+```sh
+nix build .#          # daemon only
+nix build .#full      # daemon + all plugins
+nix build .#static    # statically linked (Linux only)
 ```
-nix build .#
-./result/bin/goodnetd version
+
+Dev shell with local kernel overrides:
+
+```sh
+nix run .#setup       # clone deps into .goodnet/, install git hooks
+nix develop \
+  --override-input goodnet       path:.goodnet/goodnet \
+  --override-input protocol-gnet path:.goodnet/protocol-gnet
+cmake -G Ninja -B build . && cmake --build build
 ```
 
 ## License

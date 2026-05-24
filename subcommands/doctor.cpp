@@ -243,7 +243,7 @@ Finding check_plugin_dir(const std::filesystem::path& data_dir) {
         return Finding{
             Tag::Error,
             "plugin dir missing at " + dir.string(),
-            "Run: nix run goodnet#bootstrap-env",
+            "Run: nix profile add github:GoodNet-io/goodnetd#full",
         };
     }
     std::size_t so_count = 0;
@@ -256,7 +256,7 @@ Finding check_plugin_dir(const std::filesystem::path& data_dir) {
         return Finding{
             Tag::Warn,
             "plugin dir " + dir.string() + " contains zero .so files",
-            "Run: nix run goodnet#bootstrap-env",
+            "Run: nix profile add github:GoodNet-io/goodnetd#full",
         };
     }
     return Finding{
@@ -354,7 +354,7 @@ Finding check_manifest(const std::filesystem::path& data_dir) {
             "manifest at " + path.string() + " references " +
                 std::to_string(missing) + " missing plugin(s) (first: " +
                 first_missing + ")",
-            "Run: nix run goodnet#install-plugins",
+            "Run: nix profile add github:GoodNet-io/goodnetd#full",
         };
     }
     return Finding{
@@ -489,7 +489,7 @@ Finding check_forgejo_runner() {
         return Finding{
             Tag::Warn,
             "forgejo-runner: token present but systemctl unavailable",
-            "Install forgejo-runner via nix run goodnet#bootstrap-env",
+            "Install forgejo-runner: see https://forgejo.org/docs/latest/admin/runner-installation/",
         };
     }
     if (rc != 0) {
