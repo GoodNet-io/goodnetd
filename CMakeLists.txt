@@ -20,6 +20,7 @@ cmake_minimum_required(VERSION 3.25)
 project(goodnetd LANGUAGES CXX VERSION 0.1.0)
 
 find_package(GoodNet REQUIRED)
+find_package(GoodNetProtocolGnet REQUIRED)
 
 # libsodium is already pulled in transitively through GoodNet::kernel
 # (`GoodNetConfig.cmake.in` runs `pkg_check_modules(SODIUM ...)`), but
