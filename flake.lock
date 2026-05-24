@@ -23,11 +23,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1779642073,
-        "narHash": "sha256-F1KleBmQZdfHl/dFGhzXPwK0NseEb2YTjdR2XD9zDp8=",
+        "lastModified": 1779649188,
+        "narHash": "sha256-NDGLP2A1aBc5ZftG/kalSbFcyBduAiIKLyPo+z3Q1Lg=",
         "owner": "GoodNet-io",
         "repo": "goodnet",
-        "rev": "6f2a177be3ecb9614b494c3788530b4928f5f456",
+        "rev": "1e51df2aa4c92d4aa6d74ea4c89056dea6734464",
         "type": "github"
       },
       "original": {
