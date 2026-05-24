@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Pre-commit: clang-tidy on staged C++ files via the dev shell.
+# Requires build/compile_commands.json — run `nix run .#build` first.
+# Bypass: git commit --no-verify
+set -euo pipefail
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR \
+    | grep -E '\.(cpp|hpp|h)$' || true)
+[ -z "$staged" ] && exit 0
+
+if [ ! -f build/compile_commands.json ]; then
+    echo "pre-commit: build/compile_commands.json missing — run \`nix run .#build\` first" >&2
+    exit 1
+fi
+
+overrides=""
+[ -d .goodnet/goodnet ]       && overrides="$overrides --override-input goodnet path:.goodnet/goodnet"
+[ -d .goodnet/protocol-gnet ] && overrides="$overrides --override-input protocol-gnet path:.goodnet/protocol-gnet"
+
+if [ -z "${_GOODNETD_PRECOMMIT_INSIDE:-}" ]; then
+    export _GOODNETD_PRECOMMIT_INSIDE=1
+    # shellcheck disable=SC2086
+    exec nix develop $overrides --command bash -- "$0" "$@"
+fi
+
+failed=0
+while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    output=$(clang-tidy --quiet --warnings-as-errors='*' -p build "$f" 2>&1 || true)
+    if printf '%s\n' "$output" | grep -qE "error:|treated as errors"; then
+        printf '%s\n' "$output" >&2
+        echo "pre-commit: clang-tidy failed on $f" >&2
+        failed=$((failed + 1))
+    fi
+done <<< "$staged"
+
+[ $failed -gt 0 ] && exit 1
+exit 0
