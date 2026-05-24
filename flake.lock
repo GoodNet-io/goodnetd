@@ -66,11 +66,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1778786529,
-        "narHash": "sha256-fgvHW1iByOWKEsj4K8YD7A8Ng4vgACJTb4Q2lGqS6/Q=",
+        "lastModified": 1779125382,
+        "narHash": "sha256-fBLmSi/Ow47Lx+jjMWGqiC6qkQCjDT46FCVZkiNGwjo=",
         "owner": "GoodNet-io",
         "repo": "handler-dns",
-        "rev": "027e8775d633a6f321b43dc83b63ef6ec1900add",
+        "rev": "75e0189df74ecd9d6fc7dec65e43b6a8b66ea03c",
         "type": "github"
       },
       "original": {
@@ -89,11 +89,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1778785991,
-        "narHash": "sha256-TY9csayvkS/U9RuVla9BTCO2ugq5vStretH7h+FGPFI=",
+        "lastModified": 1779106898,
+        "narHash": "sha256-yFwgmmzHkCdykYjUPks0uVAC/zGmG+wDQPIwWThiSh8=",
         "owner": "GoodNet-io",
         "repo": "handler-heartbeat",
-        "rev": "4fb1ad6c4fe9bd21c131ff270b5268875d0c434c",
+        "rev": "3acede9eeee4a0085272bede255ab3314603b8bd",
         "type": "github"
       },
       "original": {
@@ -112,11 +112,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1778786513,
-        "narHash": "sha256-ZwZe/HFF/0vrWmR0uDp1qKLk+DiS1UtE6ORCt2iKFKI=",
+        "lastModified": 1779144822,
+        "narHash": "sha256-6aXaC6RIQICNLh4driLyyM4hjYyH3u62bzxGogdRC0U=",
         "owner": "GoodNet-io",
         "repo": "handler-store",
-        "rev": "0db4f281c795b6c2a967268eea2e9c187c8fa089",
+        "rev": "8dc22347f03884048253123cb22b24b7e656a7d7",
         "type": "github"
       },
       "original": {
@@ -135,11 +135,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1778608962,
-        "narHash": "sha256-rgmfSUsohPYaZVDssomYzbTHrpFuwQs0ETFbo5DBdnw=",
+        "lastModified": 1779601083,
+        "narHash": "sha256-1MOJV7QfsOf3d3w4e14PHpdnxffPJeLeTmqQRMlQnwQ=",
         "owner": "GoodNet-io",
         "repo": "link-ice",
-        "rev": "12a7e46272f3211a2b927d4d8bc09dc9935611ec",
+        "rev": "942d4670326a816fdaa13d46394d270dc25aa6e6",
         "type": "github"
       },
       "original": {
@@ -158,11 +158,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1778260244,
-        "narHash": "sha256-jpssvoiFt8KXgA5TNbnN8+jXnnBVlL19liH2HDlKaH4=",
+        "lastModified": 1779106658,
+        "narHash": "sha256-sZjMrXWgElb+GFC9WspM+OK/qXS6eLKFLaRKXffvEAg=",
         "owner": "GoodNet-io",
         "repo": "link-ipc",
-        "rev": "e4a897b67ba87640ffe27d7bfdda96390fb29256",
+        "rev": "433a1847cd125dded3b7ee125f8374f1ece890bf",
         "type": "github"
       },
       "original": {
@@ -181,11 +181,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1778785999,
-        "narHash": "sha256-kSedVxItqQ0NWdGybiEmAYHk6cGQq77b3QJctUecpPo=",
+        "lastModified": 1779269897,
+        "narHash": "sha256-6EG5pMD4bcIbma6QYxnsWjHFG+l+LuYjXFfuHw529iY=",
         "owner": "GoodNet-io",
         "repo": "link-tcp",
-        "rev": "1e825171702d9e88f6d31f2c03c94112d8b85274",
+        "rev": "0babfbf69288e4208659437bc1eae98bab2d9701",
         "type": "github"
       },
       "original": {
@@ -204,11 +204,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1778786003,
-        "narHash": "sha256-O2ZxMK+7xOX+PERtCB5lOphY99L07bLIKc4Riqy6Pco=",
+        "lastModified": 1779144298,
+        "narHash": "sha256-iDz1dO4Z7vmlSXX50oPDohYgmmPIHDb9n4qQX6qQccY=",
         "owner": "GoodNet-io",
         "repo": "link-tls",
-        "rev": "51d99d66d2204c27ba48710059da2dc2423cb6dc",
+        "rev": "1a4f3fe280b1be1e388fa4de28d4081543f72324",
         "type": "github"
       },
       "original": {
@@ -227,11 +227,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1778785997,
-        "narHash": "sha256-sSU2BJQuRnDP5VcsBfD6n+9tCpSYfL319hlut2fEaz8=",
+        "lastModified": 1779106772,
+        "narHash": "sha256-hw3XU9hvOViEpHsMFwcrVcXk/m5Hmwua7nfFwAoD8F4=",
         "owner": "GoodNet-io",
         "repo": "link-udp",
-        "rev": "2fafb367dd08e9275aac128c41ad46eadf2a4ef9",
+        "rev": "eaa476fd41e0830b1116da84a11f3fd888e83019",
         "type": "github"
       },
       "original": {
@@ -250,11 +250,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1778786619,
-        "narHash": "sha256-/c2zgZ048CF59IhPY+TrDtzrA+BBzrEnByRG6VU0CTg=",
+        "lastModified": 1779121949,
+        "narHash": "sha256-oLH1OLxR78Vmmf7NrHuUApm4L7CJILV0IuGIBWRCC+Q=",
         "owner": "GoodNet-io",
         "repo": "link-ws",
-        "rev": "af07bd7b7f3949c6cadc552829f1930f8146d49a",
+        "rev": "99213aa8ee8ddf23da25cace9dff8306259cf1c6",
         "type": "github"
       },
       "original": {
