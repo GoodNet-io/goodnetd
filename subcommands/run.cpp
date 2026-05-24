@@ -9,12 +9,10 @@
 /// On signal: PluginManager.shutdown() drains in-flight async work
 /// before the process exits.
 ///
-/// gnet protocol is linked statically into the binary (it is the
-/// canonical mesh-framing layer; an out-of-tree protocol layer is
-/// registered alongside it through the kernel's
-/// `protocol_layers().register_layer(...)` from a host program,
-/// not through the manifest). Operators with a custom protocol
-/// layer build their own runner.
+/// gnet protocol is registered via the public C ABI
+/// `gn_gnet_register_protocol(gn_core_t*)` (sdk/gnet.h). An out-of-tree
+/// protocol layer may be registered alongside it by the host program.
+/// Operators with a custom protocol layer build their own runner.
 
 #include "../subcommands.hpp"
 
@@ -46,9 +44,8 @@
 #include <core/util/log.hpp>
 #include <core/util/log_config.hpp>
 
-#include <plugins/protocols/gnet/protocol.hpp>
-
 #include <sdk/extensions/identity.h>
+#include <sdk/gnet.h>
 
 namespace gn::apps::goodnet {
 
@@ -411,7 +408,6 @@ int cmd_run(std::span<const std::string_view> args) {
     using gn::core::PluginContext;
     using gn::core::PluginManager;
     using gn::core::build_host_api;
-    using gn::plugins::gnet::GnetProtocol;
 
     /// Apply the operator's log shape from the loaded config keys
     /// before constructing the kernel — the kernel's ctor already
@@ -428,11 +424,13 @@ int cmd_run(std::span<const std::string_view> args) {
 
     Kernel kernel;
     kernel.set_limits(cfg.limits());
-    {
-        gn::core::protocol_layer_id_t proto_id =
-            gn::core::kInvalidProtocolLayerId;
-        (void)kernel.protocol_layers().register_layer(
-            std::make_shared<GnetProtocol>(), &proto_id);
+    if (const gn_result_t rc = gn_gnet_register_protocol(
+            reinterpret_cast<gn_core_t*>(&kernel));
+        rc != GN_OK) {
+        (void)std::fprintf(stderr,
+            "goodnet run: gnet protocol registration failed (rc=%d)\n",
+            static_cast<int>(rc));
+        return 1;
     }
     /// File-backed: install identity now (the security pipeline reads
     /// it on every `notify_connect`, so before-plugins is the right
