@@ -6,18 +6,53 @@
     goodnet.url       = "github:GoodNet-io/goodnet/dev";
     protocol-gnet.url = "github:GoodNet-io/protocol-gnet";
 
-    # Loadable plugins — each in its own repo, consumed via goodnet.lib.compose.
+    # Loadable plugins. Each plugin's in-tree flake references the kernel via
+    # `git+file:../../..?dir=nix/kernel-only` which only resolves inside the
+    # monorepo. `follows` redirects those inputs to this flake's `goodnet`,
+    # making the plugins work from any external consumer.
     link-tcp.url       = "github:GoodNet-io/link-tcp";
+    link-tcp.inputs.goodnet.follows   = "goodnet";
+    link-tcp.inputs.nixpkgs.follows   = "nixpkgs";
+
     link-udp.url       = "github:GoodNet-io/link-udp";
+    link-udp.inputs.goodnet.follows   = "goodnet";
+    link-udp.inputs.nixpkgs.follows   = "nixpkgs";
+
     link-ws.url        = "github:GoodNet-io/link-ws";
+    link-ws.inputs.goodnet.follows    = "goodnet";
+    link-ws.inputs.nixpkgs.follows    = "nixpkgs";
+
     link-ipc.url       = "github:GoodNet-io/link-ipc";
+    link-ipc.inputs.goodnet.follows   = "goodnet";
+    link-ipc.inputs.nixpkgs.follows   = "nixpkgs";
+
     link-tls.url       = "github:GoodNet-io/link-tls";
+    link-tls.inputs.goodnet.follows   = "goodnet";
+    link-tls.inputs.nixpkgs.follows   = "nixpkgs";
+
     link-ice.url       = "github:GoodNet-io/link-ice";
+    link-ice.inputs.goodnet.follows   = "goodnet";
+    link-ice.inputs.nixpkgs.follows   = "nixpkgs";
+
     security-noise.url = "github:GoodNet-io/security-noise";
+    security-noise.inputs.goodnet.follows  = "goodnet";
+    security-noise.inputs.nixpkgs.follows  = "nixpkgs";
+
     security-null.url  = "github:GoodNet-io/security-null";
+    security-null.inputs.goodnet.follows   = "goodnet";
+    security-null.inputs.nixpkgs.follows   = "nixpkgs";
+
     handler-heartbeat.url = "github:GoodNet-io/handler-heartbeat";
+    handler-heartbeat.inputs.goodnet.follows  = "goodnet";
+    handler-heartbeat.inputs.nixpkgs.follows  = "nixpkgs";
+
     handler-store.url     = "github:GoodNet-io/handler-store";
+    handler-store.inputs.goodnet.follows      = "goodnet";
+    handler-store.inputs.nixpkgs.follows      = "nixpkgs";
+
     handler-dns.url       = "github:GoodNet-io/handler-dns";
+    handler-dns.inputs.goodnet.follows        = "goodnet";
+    handler-dns.inputs.nixpkgs.follows        = "nixpkgs";
   };
 
   outputs = { self, nixpkgs, goodnet, protocol-gnet
@@ -75,7 +110,7 @@
         in {
           default = daemon;
 
-          # Full composed node: daemon + all plugins via goodnet.lib.compose.
+          # Full ecosystem: daemon + all plugins composed via goodnet.lib.compose.
           # nix profile add .#full  →  goodnet-node in PATH with all plugins bundled.
           full = goodnet.lib.compose pkgs {
             kernel  = daemon;
