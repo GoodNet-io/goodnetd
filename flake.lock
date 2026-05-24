@@ -23,36 +23,40 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1779283482,
-        "narHash": "sha256-VmQ+4s553SBhJrNs1TFGXPEomyCgC/QNmdu37pY9OLc=",
+        "lastModified": 1779642073,
+        "narHash": "sha256-F1KleBmQZdfHl/dFGhzXPwK0NseEb2YTjdR2XD9zDp8=",
         "owner": "GoodNet-io",
         "repo": "goodnet",
-        "rev": "1b2cf057b1aae09ad86f141026a7de471e705073",
+        "rev": "6f2a177be3ecb9614b494c3788530b4928f5f456",
         "type": "github"
       },
       "original": {
         "owner": "GoodNet-io",
+        "ref": "dev",
+        "repo": "goodnet",
+        "type": "github"
+      }
+    },
+    "goodnet_2": {
+      "inputs": {
+        "nixpkgs": "nixpkgs_3"
+      },
+      "locked": {
+        "lastModified": 1779642073,
+        "narHash": "sha256-F1KleBmQZdfHl/dFGhzXPwK0NseEb2YTjdR2XD9zDp8=",
+        "owner": "GoodNet-io",
+        "repo": "goodnet",
+        "rev": "6f2a177be3ecb9614b494c3788530b4928f5f456",
+        "type": "github"
+      },
+      "original": {
+        "owner": "GoodNet-io",
+        "ref": "dev",
         "repo": "goodnet",
         "type": "github"
       }
     },
     "nixpkgs": {
-      "locked": {
-        "lastModified": 1776877367,
-        "narHash": "sha256-EHq1/OX139R1RvBzOJ0aMRT3xnWyqtHBRUBuO1gFzjI=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "0726a0ecb6d4e08f6adced58726b95db924cef57",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixos-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
-    "nixpkgs_2": {
       "locked": {
         "lastModified": 1778869304,
         "narHash": "sha256-30sZNZoA1cqF5JNO9fVX+wgiQYjB7HJqqJ4ztCDeBZE=",
@@ -68,11 +72,79 @@
         "type": "github"
       }
     },
-    "root": {
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1779508470,
+        "narHash": "sha256-Ap9KJX+5xHIn3bPIpfNgT6MEXdAECECwo4/rmlQD74M=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "29916453413845e54a65b8a1cf996842300cd299",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_3": {
+      "locked": {
+        "lastModified": 1778869304,
+        "narHash": "sha256-30sZNZoA1cqF5JNO9fVX+wgiQYjB7HJqqJ4ztCDeBZE=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "d233902339c02a9c334e7e593de68855ad26c4cb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_4": {
+      "locked": {
+        "lastModified": 1779508470,
+        "narHash": "sha256-Ap9KJX+5xHIn3bPIpfNgT6MEXdAECECwo4/rmlQD74M=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "29916453413845e54a65b8a1cf996842300cd299",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "protocol-gnet": {
       "inputs": {
         "flake-utils": "flake-utils",
+        "goodnet": "goodnet_2",
+        "nixpkgs": "nixpkgs_4"
+      },
+      "locked": {
+        "lastModified": 1779644151,
+        "narHash": "sha256-grsxeFcWUzLLMMVUQNvHGpGRJQeG3eMTw2TQ7cdYPHc=",
+        "owner": "GoodNet-io",
+        "repo": "protocol-gnet",
+        "rev": "77ce932ed9d0ef699e2f534f61d2032a0988e3f2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "GoodNet-io",
+        "repo": "protocol-gnet",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
         "goodnet": "goodnet",
-        "nixpkgs": "nixpkgs_2"
+        "nixpkgs": "nixpkgs_2",
+        "protocol-gnet": "protocol-gnet"
       }
     },
     "systems": {
