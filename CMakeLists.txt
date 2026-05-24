@@ -53,7 +53,7 @@ add_executable(goodnetd
 
 target_link_libraries(goodnetd
     PRIVATE
-        GoodNet::kernel
+        GoodNet::kernel_shared
         GoodNet::protocol_gnet
         PkgConfig::SODIUM
         nlohmann_json::nlohmann_json
