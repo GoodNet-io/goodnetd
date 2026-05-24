@@ -131,6 +131,7 @@ if(GOODNETD_BUILD_TESTS)
     )
     target_link_libraries(test_quickstart
         PRIVATE
+            PkgConfig::SODIUM
             nlohmann_json::nlohmann_json
     )
     target_compile_features(test_quickstart PRIVATE cxx_std_23)
