@@ -44,6 +44,7 @@
 #include <core/util/log.hpp>
 #include <core/util/log_config.hpp>
 
+#include <sdk/core.h>
 #include <sdk/extensions/identity.h>
 #include <sdk/gnet.h>
 
@@ -507,6 +508,34 @@ int cmd_run(std::span<const std::string_view> args) {
             rc != 0) {
             plugins.shutdown();
             return rc;
+        }
+    }
+
+    /// Open the listeners declared in config.json. The `listeners`
+    /// array is application-level (not a kernel Config key), so we
+    /// re-parse it from the config dump rather than going through
+    /// the typed Config accessors that don't expose the raw array.
+    {
+        const auto doc = nlohmann::json::parse(cfg.dump(), nullptr, false);
+        if (doc.is_object() && doc.contains("listeners") &&
+                doc["listeners"].is_array()) {
+            for (const auto& entry : doc["listeners"]) {
+                if (!entry.is_object() || !entry.contains("uri") ||
+                        !entry["uri"].is_string()) {
+                    continue;
+                }
+                const std::string uri = entry["uri"].get<std::string>();
+                if (const gn_result_t rc = gn_core_listen(
+                        reinterpret_cast<gn_core_t*>(&kernel), uri.c_str());
+                    rc != GN_OK) {
+                    (void)std::fprintf(stderr,
+                        "goodnet run: listen %s failed (rc=%d)\n",
+                        uri.c_str(), static_cast<int>(rc));
+                    plugins.shutdown();
+                    return 1;
+                }
+                GN_LOG_INFO("goodnet run: listening on {}", uri);
+            }
         }
     }
 
