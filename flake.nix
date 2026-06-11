@@ -2,49 +2,42 @@
   description = "goodnetd — operator-facing daemon + multicall CLI for the GoodNet kernel.";
 
   inputs = {
-    nixpkgs.url     = "github:NixOS/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
-
-    # `goodnet-core` flake — the kernel published as a Nix package.
-    # Pulls in `GoodNet::sdk` + `GoodNet::kernel` (libgoodnet_kernel.so
-    # + transitive runtime deps). goodnetd consumes only the public
-    # SDK surface from this input — no path-based reach into the
-    # kernel monorepo's `core/` / `plugins/` subdirectories.
-    goodnet.url = "github:GoodNet-io/goodnet";
+    goodnet.url     = "github:GoodNet-io/goodnet/dev";
+    nixpkgs.follows = "goodnet/nixpkgs";
   };
 
-  outputs = { self, nixpkgs, flake-utils, goodnet }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs   = import nixpkgs { inherit system; };
-        # goodnet-core derivation: ships GoodNet::sdk + GoodNet::kernel
-        # CMake targets, plus libsodium / nlohmann_json / openssl /
-        # asio / spdlog / fmt through propagatedBuildInputs. goodnetd
-        # gets the whole closure at link time without listing each
-        # transitive dep here.
-        kernel = goodnet.packages.${system}.goodnet-core or goodnet.packages.${system}.default;
-      in {
-        packages.default = pkgs.stdenv.mkDerivation {
+  outputs = { self, nixpkgs, goodnet }:
+    let
+      systems = [ "x86_64-linux" "aarch64-linux" ];
+      forAll  = f: nixpkgs.lib.genAttrs systems
+        (system: f system (import nixpkgs { inherit system; }));
+
+      kernel = system:
+        goodnet.packages.${system}.goodnet-core
+          or goodnet.packages.${system}.default;
+    in {
+      packages = forAll (system: pkgs: {
+        default = pkgs.stdenv.mkDerivation {
           pname   = "goodnetd";
           version = "0.1.0";
           src     = ./.;
           nativeBuildInputs = [ pkgs.cmake pkgs.ninja pkgs.pkg-config ];
-          buildInputs       = [ kernel pkgs.libsodium pkgs.nlohmann_json ];
+          buildInputs       = [ (kernel system) pkgs.libsodium pkgs.nlohmann_json ];
           meta = {
             description = "Operator-facing daemon and multicall CLI for the GoodNet kernel.";
             license     = pkgs.lib.licenses.mit;
           };
         };
-
-        devShells.default = pkgs.mkShell {
-          packages = [
-            kernel
-            pkgs.libsodium
-            pkgs.nlohmann_json
-            pkgs.cmake
-            pkgs.ninja
-            pkgs.pkg-config
-          ];
-        };
       });
+
+      devShells = forAll (system: pkgs:
+        let k = kernel system; in {
+          default = pkgs.mkShell {
+            packages = [ k pkgs.libsodium pkgs.nlohmann_json pkgs.cmake pkgs.ninja pkgs.pkg-config ];
+            shellHook = ''
+              export LD_LIBRARY_PATH="${k}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            '';
+          };
+        });
+    };
 }
