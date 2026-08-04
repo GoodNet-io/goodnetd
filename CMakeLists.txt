@@ -19,8 +19,27 @@
 cmake_minimum_required(VERSION 3.25)
 project(goodnetd LANGUAGES CXX VERSION 0.1.0)
 
-find_package(GoodNet REQUIRED)
-find_package(GoodNetProtocolGnet REQUIRED)
+# In-tree (monorepo): GoodNet targets are already defined by the parent.
+# Standalone (own flake / cmake --build): pull them from the installed SDK.
+if(NOT TARGET GoodNet::sdk)
+    find_package(GoodNet REQUIRED)
+endif()
+
+# GoodNet::protocol_gnet — in-tree: ALIAS created by
+# plugins/protocols/gnet/CMakeLists.txt; standalone: must be installed.
+if(NOT TARGET GoodNet::protocol_gnet)
+    find_package(GoodNetProtocolGnet QUIET)
+    if(NOT TARGET GoodNet::protocol_gnet)
+        message(FATAL_ERROR
+            "GoodNet::protocol_gnet not found.\n"
+            "  Monorepo build: configure from the repository root:\n"
+            "    cmake --preset dev   (requires GOODNET_BUILD_BUNDLED_PLUGINS=ON)\n"
+            "  Standalone build: install GoodNetProtocolGnet first:\n"
+            "    nix build ./plugins/protocols/gnet# "
+            "--override-input goodnet path:. -o result-gnet\n"
+            "    cmake --install result-gnet")
+    endif()
+endif()
 
 # libsodium is already pulled in transitively through GoodNet::kernel
 # (`GoodNetConfig.cmake.in` runs `pkg_check_modules(SODIUM ...)`), but
@@ -49,6 +68,7 @@ add_executable(goodnetd
     subcommands/run.cpp
     subcommands/doctor.cpp
     subcommands/quickstart.cpp
+    subcommands/external_key.cpp
 )
 
 target_link_libraries(goodnetd
@@ -156,4 +176,12 @@ if(GOODNETD_BUILD_TESTS)
         PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME goodnetd.identity_import_hsm
              COMMAND test_identity_import_hsm)
+
+    add_executable(test_external_key
+        tests/test_external_key.cpp
+        subcommands/external_key.cpp
+    )
+    target_compile_features(test_external_key PRIVATE cxx_std_23)
+    target_include_directories(test_external_key PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME goodnetd.external_key COMMAND test_external_key)
 endif()

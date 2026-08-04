@@ -32,7 +32,8 @@ void print_usage() {
         "  identity show <file>          print public surface of a saved identity\n"
         "  run --config X --manifest Y [--identity Z]   load kernel + plugins, run until SIGTERM\n"
         "  doctor [--json]               walk runtime env + report fixable issues\n"
-        "  quickstart [--non-interactive]   first-time setup wizard\n",
+        "  quickstart [--non-interactive]   first-time setup wizard\n"
+        "  external-key <uri>            derive pk for raw_inject/ws_inject peer\n",
         stderr);
 }
 
@@ -98,6 +99,9 @@ int main(int argc, char** argv) {
     }
     if (sub == "quickstart") {
         return cmd_quickstart(tail);
+    }
+    if (sub == "external-key") {
+        return cmd_external_key(tail);
     }
 
     (void)std::fprintf(stderr, "goodnet: unknown subcommand '%.*s'\n",

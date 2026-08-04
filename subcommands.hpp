@@ -22,6 +22,7 @@ namespace gn::apps::goodnet {
 [[nodiscard]] int cmd_run(std::span<const std::string_view> args);
 [[nodiscard]] int cmd_doctor(std::span<const std::string_view> args);
 [[nodiscard]] int cmd_quickstart(std::span<const std::string_view> args);
+[[nodiscard]] int cmd_external_key(std::span<const std::string_view> args);
 
 /// Test-only seam. Doctor's provider-backend reachability check
 /// normally spins a fresh `gn_core_t` and queries the extension
